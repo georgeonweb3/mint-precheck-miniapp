@@ -1,0 +1,1054 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="dark" />
+<link rel="icon" href="icon.png" />
+<title>Mint Precheck — BSC + Base mint/claim precheck</title>
+<meta name="description" content="Paste a contract address on BSC or Base and get a live read-only mint/claim verdict: price, remaining supply, open status, per-wallet limit, risk flags. Never signs, never asks for keys." />
+<!-- Farcaster Mini App embed (spec: miniapps.farcaster.xyz/docs/guides/sharing) -->
+<meta name="fc:miniapp" content='{"version":"1","imageUrl":"https://georgeonweb3.github.io/mint-precheck-miniapp/embed.png","button":{"title":"🔍 Run a mint precheck","action":{"type":"launch_miniapp","name":"Mint Precheck","url":"https://georgeonweb3.github.io/mint-precheck-miniapp/","splashImageUrl":"https://georgeonweb3.github.io/mint-precheck-miniapp/splash.png","splashBackgroundColor":"#0b0e13"}}}' />
+<!-- For backward compatibility -->
+<meta name="fc:frame" content='{"version":"1","imageUrl":"https://georgeonweb3.github.io/mint-precheck-miniapp/embed.png","button":{"title":"🔍 Run a mint precheck","action":{"type":"launch_frame","name":"Mint Precheck","url":"https://georgeonweb3.github.io/mint-precheck-miniapp/","splashImageUrl":"https://georgeonweb3.github.io/mint-precheck-miniapp/splash.png","splashBackgroundColor":"#0b0e13"}}}' />
+<style>
+  :root{
+    --bg:#0b0e13; --card:#141922; --card2:#10141c; --line:#242d3a;
+    --text:#e9eef4; --muted:#97a3b4; --faint:#6b7889;
+    --accent:#4da3ff; --accent-text:#0b1220;
+    --green:#2fbf71; --red:#f0524f; --amber:#f5a623; --blue:#4da3ff;
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC",sans-serif;
+    font-size:16px;line-height:1.55;}
+  .wrap{max-width:720px;margin:0 auto;padding:20px 16px 48px}
+  /* header */
+  header.top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:6px 0 4px}
+  .brand h1{font-size:24px;line-height:1.2;margin:0;font-weight:800;letter-spacing:.2px}
+  @media (max-width:480px){.brand h1{font-size:20px} header.top{gap:8px}}
+  .brand h1 .zh{color:var(--accent)}
+  .brand p{margin:6px 0 0;color:var(--muted);font-size:14px;max-width:46ch}
+  .lang-toggle{display:flex;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px;flex:none;margin-top:2px}
+  .lang-toggle button{appearance:none;border:0;background:transparent;color:var(--muted);font:inherit;font-size:13px;font-weight:700;padding:6px 13px;border-radius:999px;cursor:pointer;min-height:34px}
+  .lang-toggle button[aria-pressed="true"]{background:var(--accent);color:var(--accent-text)}
+  .fc-user{display:none;gap:8px;align-items:center;margin-top:12px;background:#12203a;border:1px solid #274a7d;border-radius:10px;padding:9px 12px;font-size:13.5px;color:#a9c8f5}
+  .readonly-line{display:flex;gap:8px;align-items:flex-start;margin-top:14px;background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px;color:var(--muted)}
+  .readonly-line b{color:var(--text)}
+  /* checker */
+  section.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px 16px;margin-top:16px}
+  section.card h2{margin:0 0 4px;font-size:18px;font-weight:800}
+  section.card .sub{margin:0 0 14px;color:var(--muted);font-size:13.5px}
+  label.f-label{display:block;font-size:13px;font-weight:700;color:var(--muted);margin-bottom:7px}
+  .chain-toggle{display:flex;background:#0d1118;border:1px solid var(--line);border-radius:10px;padding:3px;gap:3px;margin-bottom:14px}
+  .chain-toggle button{appearance:none;border:0;background:transparent;color:var(--muted);font:inherit;font-size:14px;font-weight:700;padding:9px 10px;border-radius:8px;cursor:pointer;flex:1;min-height:42px}
+  .chain-toggle button[aria-pressed="true"]{background:var(--accent);color:var(--accent-text)}
+  .input-row{display:flex;flex-direction:column;gap:10px}
+  textarea#ca-input{width:100%;background:#0d1118;border:1px solid var(--line);border-radius:10px;color:var(--text);
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.5;
+    padding:12px;min-height:58px;resize:vertical;word-break:break-all}
+  textarea#ca-input::placeholder{color:var(--faint);font-family:inherit}
+  textarea#ca-input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
+  button.primary{appearance:none;border:0;background:var(--accent);color:var(--accent-text);font:inherit;font-weight:800;font-size:16px;
+    border-radius:10px;padding:13px 18px;cursor:pointer;min-height:50px;width:100%}
+  button.primary:disabled{opacity:.55;cursor:wait}
+  .examples{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;align-items:center}
+  .examples span{font-size:12.5px;color:var(--faint)}
+  .chip{appearance:none;background:#0d1118;border:1px solid var(--line);color:var(--muted);font:inherit;font-size:12.5px;
+    padding:7px 11px;border-radius:999px;cursor:pointer;min-height:34px}
+  .chip:active{border-color:var(--accent);color:var(--text)}
+  .form-error{display:none;margin-top:12px;background:#2a1517;border:1px solid #5b2326;color:#ffb4b1;border-radius:10px;padding:10px 12px;font-size:14px}
+  .form-error.show{display:block}
+  /* progress */
+  .progress{display:none;margin-top:16px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px 16px}
+  .progress.show{display:block}
+  .progress .row{display:flex;align-items:center;gap:12px}
+  .spinner{width:22px;height:22px;flex:none;border-radius:50%;border:3px solid var(--line);border-top-color:var(--accent);animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion: reduce){.spinner{animation:none}}
+  .progress p{margin:0;font-size:14.5px}
+  .progress .steps{margin:10px 0 0;color:var(--faint);font-size:12.5px}
+  /* result */
+  .result{display:none;margin-top:16px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  .result.show{display:block}
+  .result-head{padding:16px 16px 12px;border-bottom:1px solid var(--line)}
+  .result-head .proj{font-size:17px;font-weight:800;word-break:break-word}
+  .contract-row{display:flex;align-items:flex-start;gap:8px;margin-top:8px;flex-wrap:wrap}
+  .contract-row code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;color:var(--muted);word-break:break-all;line-height:1.5;padding-top:3px}
+  .mini-btn{appearance:none;flex:none;background:#0d1118;border:1px solid var(--line);color:var(--text);font:inherit;font-size:12px;font-weight:700;padding:6px 10px;border-radius:8px;cursor:pointer;min-height:32px;text-decoration:none;display:inline-block}
+  .mini-btn.copied{border-color:var(--green);color:var(--green)}
+  .verdict{margin:14px 16px 0;border-radius:10px;padding:13px 14px;font-size:16.5px;font-weight:800}
+  .verdict small{display:block;font-weight:500;font-size:13.5px;margin-top:3px;opacity:.9}
+  .verdict.go{background:#0f2b1d;border:1px solid #1f5c3d;color:#7ce6ab}
+  .verdict.bad{background:#2c1416;border:1px solid #5f2528;color:#ff9d9a}
+  .verdict.warn{background:#2b2110;border:1px solid #5f4a1f;color:#ffd479}
+  .verdict.neutral{background:#1a2230;border:1px solid #2c3a52;color:#a9c8f5}
+  .facts{padding:8px 16px 4px}
+  .fact{display:flex;gap:10px;padding:9px 0;border-bottom:1px dashed #202936;font-size:14.5px}
+  .fact:last-child{border-bottom:0}
+  .fact .k{flex:none;width:118px;color:var(--muted);font-size:13.5px;padding-top:1px}
+  .fact .v{word-break:break-word}
+  .fact .v b{font-weight:700}
+  .ok{color:var(--green);font-weight:700}.no{color:var(--red);font-weight:700}.unk{color:var(--amber);font-weight:700}
+  .riskbox{margin:6px 16px 0;background:#0d1118;border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .riskbox h3{margin:0 0 7px;font-size:13.5px;color:var(--muted)}
+  .riskbox ul{margin:0;padding-left:18px;font-size:13.5px}
+  .riskbox li{margin:3px 0;word-break:break-word}
+  .riskbox p{margin:0;font-size:13.5px;color:var(--muted)}
+  .result-note{margin:12px 16px 0;font-size:12.5px;color:var(--faint)}
+  .block-line{margin:6px 16px 0;font-size:12px;color:var(--faint);font-family:ui-monospace,Menlo,Consolas,monospace}
+  .result-actions{display:flex;flex-direction:column;gap:9px;padding:14px 16px 16px}
+  @media (min-width:560px){.result-actions{flex-direction:row}.result-actions button{flex:1}}
+  button.action{appearance:none;font:inherit;font-weight:700;font-size:14.5px;border-radius:10px;padding:12px;cursor:pointer;min-height:48px;
+    background:#0d1118;border:1px solid var(--line);color:var(--text)}
+  button.action.main{background:var(--accent);border-color:var(--accent);color:var(--accent-text)}
+  button.action.copied{border-color:var(--green);color:var(--green)}
+  button.action.main.copied{background:#0f2b1d;border-color:var(--green);color:#7ce6ab}
+  /* tip */
+  .tip-addr{display:flex;align-items:flex-start;gap:8px;margin-top:10px}
+  .tip-addr code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;color:var(--muted);word-break:break-all;line-height:1.5;padding-top:3px}
+  #tip-sdk-btn{display:none;width:100%;margin-bottom:10px}
+  /* footer */
+  footer{margin-top:26px;border-top:1px solid var(--line);padding-top:16px;font-size:13.5px;color:var(--muted)}
+  footer a{color:var(--blue)}
+  footer p{margin:0 0 8px}
+  footer .keys{color:var(--faint);font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand">
+      <h1>Mint Precheck <span class="zh" data-i18n="brandZh">打新预检</span></h1>
+      <p data-i18n="tagline">Paste a contract address on BSC or Base and check before you mint: is it really free, still open, how much is left, any backdoor flags?</p>
+    </div>
+    <div class="lang-toggle" role="group" aria-label="Language">
+      <button type="button" id="lang-en" aria-pressed="true">EN</button>
+      <button type="button" id="lang-zh" aria-pressed="false">中文</button>
+    </div>
+  </header>
+
+  <div class="fc-user" id="fc-user"><span></span></div>
+
+  <div class="readonly-line">
+    <div>🔒 <span data-i18n="readonlyLine"><b>Read-only check.</b> This page reads on-chain data directly in your browser. No wallet connection, no signing, no approvals, and it never asks for a private key or seed phrase. Anyone asking in its name is a scammer.</span></div>
+  </div>
+
+  <!-- ============ PRECHECK ============ -->
+  <section class="card" aria-labelledby="checker-h">
+    <h2 id="checker-h" data-i18n="checkerTitle">🔍 Mint Precheck</h2>
+    <p class="sub" data-i18n="checkerSub">Every check is a fresh live read, nothing is cached. A check takes a few seconds up to ~20s depending on node speed.</p>
+    <div class="chain-toggle" role="group" aria-label="Chain">
+      <button type="button" id="chain-base" aria-pressed="true">Base (8453)</button>
+      <button type="button" id="chain-bsc" aria-pressed="false">BNB Smart Chain (56)</button>
+    </div>
+    <form id="check-form" novalidate>
+      <label class="f-label" for="ca-input" data-i18n="inputLabel">Contract address (CA) or mint link</label>
+      <div class="input-row">
+        <textarea id="ca-input" rows="2" spellcheck="false" autocomplete="off" autocapitalize="off"
+          data-i18n-ph="inputPh" placeholder="Paste a 0x… contract address, or a link / text containing one"></textarea>
+        <button class="primary" type="submit" id="check-btn" data-i18n="checkBtn">Run precheck</button>
+      </div>
+      <div class="form-error" id="form-error" role="alert"></div>
+      <div class="examples">
+        <span data-i18n="tryLabel">Try one:</span>
+        <button type="button" class="chip" id="ex-fox-base">Pixel Foxes — Base <span data-i18n="exFree">free mint</span> (0x686e…9a10)</button>
+        <button type="button" class="chip" id="ex-pixelfox">Pixel Fox — BSC <span data-i18n="exSoldOut">sold-out example</span> (0x9134…29b0c)</button>
+      </div>
+    </form>
+  </section>
+
+  <div class="progress" id="progress" role="status">
+    <div class="row">
+      <div class="spinner" aria-hidden="true"></div>
+      <p data-i18n="checking">Checking… reading on-chain data (read-only)</p>
+    </div>
+    <p class="steps" id="checking-steps">Contract code → price / quota / open status → 0-value simulation → gas</p>
+  </div>
+
+  <!-- ============ RESULT ============ -->
+  <div class="result" id="result" aria-live="polite"></div>
+
+  <!-- ============ TIP ============ -->
+  <section class="card" aria-labelledby="tip-h">
+    <h2 id="tip-h" data-i18n="tipTitle">💜 Tip the builder</h2>
+    <p class="sub" data-i18n="tipSub">Checks are free and stay free. If this tool saved you from a bad mint, a small tip in USDC on Base keeps it running.</p>
+    <button class="primary" type="button" id="tip-sdk-btn" data-i18n="tipBtn">Tip 1 USDC (in Farcaster)</button>
+    <label class="f-label" data-i18n="tipAddrLabel">Tip address (Base, USDC or ETH)</label>
+    <div class="tip-addr">
+      <code id="tip-address">0xfFDd2f83555c64d1CaA17f5646C08b80013ED38b</code>
+      <button type="button" class="mini-btn" id="tip-copy" data-i18n="copy">Copy</button>
+    </div>
+  </section>
+
+  <footer>
+    <p><span data-i18n="builtLine">Built by</span> <a href="https://farcaster.xyz/georgeagbe" target="_blank" rel="noopener">@georgeagbe</a> ·
+      <span data-i18n="tgLine">Telegram version (auto-checks CAs dropped in a group):</span>
+      <a href="https://t.me/daxin_check_bot" target="_blank" rel="noopener">@daxin_check_bot</a></p>
+    <p class="keys" data-i18n="keysLine">This tool only reads on-chain data: it never signs, never approves, and never asks for a private key or seed phrase.</p>
+  </footer>
+</div>
+
+<script>
+"use strict";
+/* ================= Chains ================= */
+var CHAINS = {
+  base: {
+    key: "base", id: 8453, name: "Base", native: "ETH",
+    explorerName: "BaseScan", explorerUrl: "https://basescan.org",
+    rpcs: [
+      "https://mainnet.base.org",
+      "https://base-rpc.publicnode.com",
+      "https://base.drpc.org",
+      "https://1rpc.io/base"
+    ],
+    gasBands: { cheap: 0.02, normal: 0.10, expensive: 0.50 },
+    accent: "#4da3ff", accentText: "#0b1220"
+  },
+  bsc: {
+    key: "bsc", id: 56, name: "BNB Smart Chain", native: "BNB",
+    explorerName: "BscScan", explorerUrl: "https://bscscan.com",
+    rpcs: [
+      "https://bsc-dataseed.binance.org",
+      "https://bsc-dataseed1.bnbchain.org",
+      "https://bsc-dataseed2.bnbchain.org",
+      "https://bsc-rpc.publicnode.com"
+    ],
+    gasBands: { cheap: 0.10, normal: 0.20, expensive: 0.35 },
+    accent: "#f0b90b", accentText: "#131313"
+  }
+};
+var chainKey = "base";
+try {
+  var qChain = new URLSearchParams(window.location.search).get("chain");
+  if (qChain && CHAINS[qChain]) chainKey = qChain;
+} catch (e) {}
+function chain(){ return CHAINS[chainKey]; }
+
+/* ================= i18n ================= */
+var I18N = {
+  en: {
+    brandZh: "打新预检",
+    tagline: "Paste a contract address on BSC or Base and check before you mint: is it really free, still open, how much is left, any backdoor flags?",
+    readonlyLine: "<b>Read-only check.</b> This page reads on-chain data directly in your browser. No wallet connection, no signing, no approvals, and it never asks for a private key or seed phrase. Anyone asking in its name is a scammer.",
+    checkerTitle: "🔍 Mint Precheck",
+    checkerSub: "Every check is a fresh live read, nothing is cached. A check takes a few seconds up to ~20s depending on node speed.",
+    inputLabel: "Contract address (CA) or mint link",
+    inputPh: "Paste a 0x… contract address, or a link / text containing one",
+    checkBtn: "Run precheck",
+    checkingBtn: "Checking…",
+    tryLabel: "Try one:",
+    exFree: "free mint",
+    exSoldOut: "sold-out example",
+    checking: "Checking… reading on-chain data (read-only)",
+    tipTitle: "💜 Tip the builder",
+    tipSub: "Checks are free and stay free. If this tool saved you from a bad mint, a small tip in USDC on Base keeps it running.",
+    tipBtn: "Tip 1 USDC (in Farcaster)",
+    tipAddrLabel: "Tip address (Base, USDC or ETH)",
+    builtLine: "Built by",
+    tgLine: "Telegram version (auto-checks CAs dropped in a group):",
+    keysLine: "This tool only reads on-chain data: it never signs, never approves, and never asks for a private key or seed phrase.",
+    errNoAddr: "❓ No contract found — no 0x 40-character address in that input. Paste the CA directly and try again.",
+    errBusy: "⏳ A check is already running. Wait for its result before the next one.",
+    unresolvedTitle: "❓ Precheck did not complete",
+    unresolvedBody: "RPC transport failure — no endpoint on this chain returned data. That says nothing good or bad about the project, this read just did not land. Resend the CA shortly.",
+    contract: "Contract",
+    copy: "Copy", copied: "Copied ✓",
+    viewExplorer: "Explorer",
+    copyResult: "📋 Copy result", copyLink: "🔗 Copy check link",
+    linkHint: "Share the copied link and anyone opening it auto-runs the same live check on the same chain.",
+    blockLine: "Data block",
+    lblPrice: "💰 Price", lblProgress: "📦 Progress", lblStatus: "🚪 Status", lblSim: "🧪 Simulated mint", lblGas: "⛽ Gas now",
+    lblLimit: "🎟 Per-wallet limit", lblWallet: "👛 Sample wallet",
+    priceFree: "0 — truly free, gas only",
+    pricePaid: " — NOT free",
+    priceUnknown: "not read (unconfirmed, not proof of 0)",
+    mintedOf: "minted", left: "left", mintedOnly: "Minted", noMax: "(no max supply read)",
+    statusOpen: "OPEN", statusClosed: "unconfirmed / not open",
+    simOk: "✅ success", simFail: "❌ failed", simNone: "not simulated (no known mint function found in bytecode)",
+    limitUnknown: "not read",
+    holds: "holds", mintedCount: "minted", wlYes: "on whitelist (sample wallet)", wlNo: "NOT on whitelist (sample wallet)",
+    riskTitle: "Backdoor / risk checks",
+    riskNone: "No obvious proxy/paused flags found (that is not proof there is no backdoor, see note).",
+    flagProxy: "⚠️ Proxy contract — upgradeable, the team can change the rules (backdoor risk)",
+    flagOwner: "⚠️ Has an owner — owner powers need review",
+    flagPaused: "⚠️ Contract is paused",
+    flagApprovals: "⚠️ Exposes approval functions (setApprovalForAll) outside a standard NFT interface — never grant approvals to this contract",
+    verdictLabel: "Verdict",
+    resultNote: "Note: this precheck does not cover explorer source verification (BscScan / BaseScan) or a token tax/honeypot audit — check those before minting. This tool is read-only: it never signs, never approves, and never asks for a private key.",
+    gasUnknown: "not read (unconfirmed)",
+    bandCheap: "cheap", bandNormal: "normal", bandExp: "expensive", bandVeryExp: "very expensive, wait",
+    unknownProject: "Unknown project",
+    precheckWord: "Mint precheck",
+    simReason: "reason",
+    stepsText: "Contract code → price / quota / open status → 0-value simulation → gas",
+    fcViewing: "Viewing as"
+  },
+  zh: {
+    brandZh: "打新预检",
+    tagline: "粘贴 BSC 或 Base 合约地址,先查清楚再打:真免费吗、还开放吗、还剩多少、有没有后门旗标。",
+    readonlyLine: "<b>只读检查。</b>本页直接在你的浏览器里读链上数据,不连钱包、不签名、不授权,永不问私钥或助记词。以本工具名义问你要私钥的人都是骗子。",
+    checkerTitle: "🔍 打新预检",
+    checkerSub: "每次检查都是实时读链,不用缓存。检查约需几秒到二十秒,取决于节点速度。",
+    inputLabel: "合约地址 (CA) 或打新链接",
+    inputPh: "粘贴 0x… 合约地址,或包含地址的链接 / 文字",
+    checkBtn: "开始预检",
+    checkingBtn: "预检中…",
+    tryLabel: "试一个:",
+    exFree: "免费打新例子",
+    exSoldOut: "已打完的例子",
+    checking: "预检中… 正在只读链上数据",
+    tipTitle: "💜 打赏作者",
+    tipSub: "预检免费,永远免费。如果这个工具帮你避开了一个坑局,Base 上的 USDC 小额打赏能帮它继续跑下去。",
+    tipBtn: "打赏 1 USDC (Farcaster 内)",
+    tipAddrLabel: "打赏地址 (Base,USDC 或 ETH)",
+    builtLine: "作者",
+    tgLine: "Telegram 版 (在群里丢 CA 自动检查):",
+    keysLine: "本工具只读链上数据:不签名、不授权,永不问私钥或助记词。",
+    errNoAddr: "❓ 没找到合约地址 — 输入里没有 0x 开头的 40 位地址。直接把 CA 粘进来再试。",
+    errBusy: "⏳ 上一个预检还在跑,等它出结果再查下一个。",
+    unresolvedTitle: "❓ 预检未完成",
+    unresolvedBody: "RPC 传输失败,这条链的所有节点都没读到数据。这不代表项目有问题或没问题,只是这次没查到。稍后重发 CA 再试。",
+    contract: "合约",
+    copy: "复制", copied: "已复制 ✓",
+    viewExplorer: "浏览器",
+    copyResult: "📋 复制结果", copyLink: "🔗 复制检查链接",
+    linkHint: "把复制的链接发出去,别人打开就会在同一条链上自动跑同一个实时检查。",
+    blockLine: "数据区块 / block",
+    lblPrice: "💰 价格", lblProgress: "📦 进度", lblStatus: "🚪 开放状态", lblSim: "🧪 模拟 mint", lblGas: "⛽ 当前 Gas",
+    lblLimit: "🎟 每钱包上限", lblWallet: "👛 示例钱包",
+    priceFree: "0 — 真免费,只付 gas",
+    pricePaid: " — 不是免费",
+    priceUnknown: "未读到 (未确认,不是 0 的证明)",
+    mintedOf: "已铸", left: "还剩", mintedOnly: "已铸", noMax: "(总量上限未读到)",
+    statusOpen: "开放中", statusClosed: "未确认 / 未开放",
+    simOk: "✅ 成功", simFail: "❌ 失败", simNone: "未模拟 (字节码里没找到已知 mint 函数)",
+    limitUnknown: "未读到",
+    holds: "持有", mintedCount: "已打", wlYes: "在白名单内 (示例钱包)", wlNo: "不在白名单 (示例钱包)",
+    riskTitle: "后门 / 风险检查",
+    riskNone: "未发现代理 / 暂停等明显旗标 (不等于无后门,见下方注)。",
+    flagProxy: "⚠️ 代理合约 — 可升级,规则可被项目方改 (后门风险)",
+    flagOwner: "⚠️ 有 owner — owner 权限需复核",
+    flagPaused: "⚠️ 合约处于 paused (暂停)",
+    flagApprovals: "⚠️ 在标准 NFT 接口之外暴露了授权函数 (setApprovalForAll) — 永远不要给这个合约授权",
+    verdictLabel: "结论",
+    resultNote: "注:本预检不查浏览器源码验证 (BscScan / BaseScan) 和代币税 / 貔貅,打之前这两项也要过。本工具只读,不签名、不授权,永不问私钥。",
+    gasUnknown: "未读到 (未确认)",
+    bandCheap: "便宜", bandNormal: "正常", bandExp: "偏贵", bandVeryExp: "很贵,先等一等",
+    unknownProject: "未知项目",
+    precheckWord: "打新预检",
+    simReason: "原因",
+    stepsText: "读合约代码 → 查价格 / 名额 / 开放状态 → 0 模拟 → 查 gas",
+    fcViewing: "当前身份"
+  }
+};
+var VERDICTS = {
+  en: {
+    OPEN_FREE_LIKELY: ["✅ GO — truly free and open", "First one is free, gas only. Safe to take the free one.", "go"],
+    OPEN_FREE_LIKELY_BY_SIMULATION: ["✅ GO — simulated OK, truly free", "Price reads 0 and the mint simulation succeeded.", "go"],
+    FREE_PRICE_BUT_OPEN_UNCONFIRMED: ["🟡 Price is free, open status unconfirmed", "Test with one first, do not batch.", "warn"],
+    PAID_NOT_FREE: ["💸 NOT free — it charges", "Breaks the free-only rule. Think before paying.", "bad"],
+    SOLD_OUT: ["❌ Sold out", "The free phase is over. Do not chase it.", "bad"],
+    NOT_OPEN: ["⏸ Not open yet", "Wait for the official open announcement.", "neutral"],
+    NOT_A_CONTRACT: ["❌ Not a contract", "No contract code on chain at that address. Check for a typo.", "bad"],
+    UNKNOWN_NEEDS_AI_REVIEW: ["🟡 Unknown — needs human review", "Unfamiliar shape. Do not mint until it is reviewed.", "warn"]
+  },
+  zh: {
+    OPEN_FREE_LIKELY: ["✅ 可打 — 真免费且开放", "首份免费,只付 gas,可以白嫖。", "go"],
+    OPEN_FREE_LIKELY_BY_SIMULATION: ["✅ 可打 — 模拟成功,真免费", "价格读数为 0 且模拟 mint 成功。", "go"],
+    FREE_PRICE_BUT_OPEN_UNCONFIRMED: ["🟡 价格免费,但开放状态未确认", "先小额确认,别批量。", "warn"],
+    PAID_NOT_FREE: ["💸 不是免费 — 要收费", "不符合白嫖规则,想打先想清楚。", "bad"],
+    SOLD_OUT: ["❌ 已打完 / 售罄", "免费阶段结束了,不要追。", "bad"],
+    NOT_OPEN: ["⏸ 还没开放", "等官方开打通知。", "neutral"],
+    NOT_A_CONTRACT: ["❌ 这不是合约地址", "链上没有合约代码,检查地址是否抄错。", "bad"],
+    UNKNOWN_NEEDS_AI_REVIEW: ["🟡 未知 — 需要人工复核", "形状不熟悉,先别打,等复核。", "warn"]
+  }
+};
+
+var lang = "en";
+try { lang = localStorage.getItem("mp-lang") === "zh" ? "zh" : "en"; } catch (e) {}
+function t(k){ return (I18N[lang] && I18N[lang][k]) || I18N.en[k] || k; }
+
+function applyLang(){
+  document.documentElement.lang = lang === "en" ? "en" : "zh-CN";
+  document.querySelectorAll("[data-i18n]").forEach(function(el){
+    var k = el.getAttribute("data-i18n");
+    if (I18N[lang][k] != null) el.innerHTML = I18N[lang][k];
+  });
+  document.querySelectorAll("[data-i18n-ph]").forEach(function(el){
+    var k = el.getAttribute("data-i18n-ph");
+    if (I18N[lang][k] != null) el.setAttribute("placeholder", I18N[lang][k]);
+  });
+  document.getElementById("lang-en").setAttribute("aria-pressed", lang === "en" ? "true" : "false");
+  document.getElementById("lang-zh").setAttribute("aria-pressed", lang === "zh" ? "true" : "false");
+  document.getElementById("checking-steps").textContent = t("stepsText");
+  if (lastResult) renderResult(lastResult);
+  if (lastUnresolved) renderUnresolved(lastUnresolved);
+  if (window.__fcUser) showFcUser(window.__fcUser);
+}
+function setLang(l){
+  lang = l;
+  try { localStorage.setItem("mp-lang", l); } catch (e) {}
+  applyLang();
+}
+document.getElementById("lang-en").addEventListener("click", function(){ setLang("en"); });
+document.getElementById("lang-zh").addEventListener("click", function(){ setLang("zh"); });
+
+function applyChain(){
+  var c = chain();
+  document.documentElement.style.setProperty("--accent", c.accent);
+  document.documentElement.style.setProperty("--accent-text", c.accentText);
+  document.getElementById("chain-base").setAttribute("aria-pressed", chainKey === "base" ? "true" : "false");
+  document.getElementById("chain-bsc").setAttribute("aria-pressed", chainKey === "bsc" ? "true" : "false");
+}
+function setChain(k){
+  if (!CHAINS[k] || k === chainKey) { chainKey = k; applyChain(); return; }
+  chainKey = k;
+  applyChain();
+}
+document.getElementById("chain-base").addEventListener("click", function(){ setChain("base"); });
+document.getElementById("chain-bsc").addEventListener("click", function(){ setChain("bsc"); });
+
+/* ================= RPC (read-only, failover) ================= */
+var PROBE_WALLET = "0xA79E2C85D5456Fa3d9115d86398896a390159D1c";
+var EIP1967_IMPL = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
+var EIP1967_ADMIN = "0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103";
+
+function rpcOnce(endpoint, method, params){
+  return new Promise(function(resolve, reject){
+    var ctl = ("AbortController" in window) ? new AbortController() : null;
+    var timer = ctl ? setTimeout(function(){ ctl.abort(); }, 12000) : null;
+    fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: method, params: params }),
+      signal: ctl ? ctl.signal : undefined
+    }).then(function(r){
+      if (timer) clearTimeout(timer);
+      if (!r.ok) { reject(new Error("HTTP " + r.status)); return; }
+      return r.json();
+    }).then(function(j){
+      if (!j) return;
+      if (j.error) {
+        if (method === "eth_call") {
+          resolve({ __revert__: (j.error && j.error.message) || "revert" });
+        } else {
+          reject(new Error((j.error && j.error.message) || "rpc error"));
+        }
+        return;
+      }
+      resolve(j.result);
+    }).catch(function(e){ if (timer) clearTimeout(timer); reject(e); });
+  });
+}
+/* Tries every endpoint of the chain. Resolves with result (or {__revert__} for eth_call).
+   Rejects only when ALL endpoints fail at transport level. */
+function rpc(c, method, params){
+  var p = Promise.reject(new Error("start"));
+  c.rpcs.forEach(function(ep){
+    p = p.catch(function(){ return rpcOnce(ep, method, params); });
+  });
+  return p;
+}
+function ethCall(c, to, data, from, valueWei){
+  var tx = { to: to, data: data };
+  if (from) tx.from = from;
+  if (valueWei) tx.value = "0x" + valueWei.toString(16);
+  return rpc(c, "eth_call", [tx, "latest"]);
+}
+
+/* ================= ABI helpers ================= */
+function encUint(v){ var s = v.toString(16); while (s.length < 64) s = "0" + s; return s; }
+function encAddress(a){ return "000000000000000000000000" + a.toLowerCase().replace("0x",""); }
+function encBytes4(hex4){ var h = hex4.toLowerCase().replace("0x",""); while (h.length < 64) h += "0"; return h; }
+function callData(sel, argsHex){ return "0x" + sel.replace("0x","") + (argsHex || ""); }
+
+function decUint(hex){
+  if (!hex || hex === "0x" || typeof hex !== "string") return null;
+  try { return BigInt(hex.slice(0, 66)); } catch (e) { return null; }
+}
+function decBool(hex){ var v = decUint(hex); return v === null ? null : v !== 0n; }
+function decAddress(hex){
+  if (!hex || typeof hex !== "string" || hex.length < 42) return null;
+  var a = "0x" + hex.slice(-40);
+  return /^0x[0-9a-fA-F]{40}$/.test(a) ? a : null;
+}
+function isZeroAddress(a){ return !a || /^0x0{40}$/i.test(a); }
+function decString(hex){
+  if (!hex || hex === "0x" || typeof hex !== "string") return null;
+  try {
+    var raw = [];
+    for (var i = 2; i + 1 < hex.length; i += 2) raw.push(parseInt(hex.substr(i, 2), 16));
+    if (raw.length >= 64) {
+      var len = 0;
+      for (var j = 32; j < 64; j++) len = len * 256 + raw[j];
+      if (len > 0 && len <= 512 && raw.length >= 64 + len) {
+        var bytes = raw.slice(64, 64 + len);
+        return decodeUtf8(bytes);
+      }
+    }
+    var clean = raw.filter(function(b){ return b !== 0; });
+    if (!clean.length) return null;
+    var s = decodeUtf8(clean).trim();
+    return s || null;
+  } catch (e) { return null; }
+}
+function decodeUtf8(bytes){
+  if ("TextDecoder" in window) { try { return new TextDecoder("utf-8", { fatal: false }).decode(new Uint8Array(bytes)); } catch (e) {} }
+  var s = ""; bytes.forEach(function(b){ s += String.fromCharCode(b); }); return s;
+}
+function fmtNum(bi){ /* BigInt -> locale string */
+  try { return Number(bi).toLocaleString(lang === "en" ? "en-US" : "zh-CN"); } catch (e) { return bi.toString(); }
+}
+function weiToNativeStr(wei){ /* BigInt wei -> trimmed 18-decimal string (BNB and ETH are both 18) */
+  var s = wei.toString();
+  while (s.length <= 18) s = "0" + s;
+  var intPart = s.slice(0, s.length - 18), frac = s.slice(s.length - 18).replace(/0+$/, "");
+  return frac ? intPart + "." + frac : intPart;
+}
+
+/* ================= Probe tables =================
+   Selectors for the original Daxin tables are inherited unchanged.
+   Selectors marked (computed) were derived with a Keccak-256 implementation
+   validated against 13 known selectors plus the empty-string hash. */
+var VIEW = [
+  ["name", "0x06fdde03", "string"], ["symbol", "0x95d89b41", "string"],
+  ["decimals", "0x313ce567", "uint"], ["totalSupply", "0x18160ddd", "uint"],
+  ["totalMinted", "0xa2309ff8", "uint"], ["maxSupply", "0xd5abeb01", "uint"],
+  ["MAX_SUPPLY", "0x32cb6b0c", "uint"], ["maxTotalSupply", "0x2ab4d052", "uint"],
+  ["collectionSize", "0x45c0f533", "uint"], ["owner", "0x8da5cb5b", "address"],
+  ["paused", "0x5c975abb", "bool"]
+];
+var PRICE_FUNCS = [
+  ["mintPrice()", "0x6817c76c"], ["price()", "0xa035b1fe"], ["cost()", "0x13faede6"],
+  ["getPrice()", "0x98d5fdca"], ["publicPrice()", "0xa945bf80"], ["salePrice()", "0xf51f96dd"],
+  ["mint_price()", "0x1a4231a4"], ["claimFee()", "0x99d32fc4"], ["fee()", "0xddca3f43"],
+  ["tokenPrice()", "0x7ff9b596"], ["presalePrice()", "0x000e7fa8"], ["mintFee()", "0x13966db5"],
+  ["publicSalePrice()", "0x9b6860c8"]
+];
+var OPEN_FUNCS = [
+  ["mintOpen()", "0x24bbd049"], ["isMintOpen()", "0x19908016"], ["publicSaleActive()", "0xbc8893b4"],
+  ["saleActive()", "0x68428a1b"], ["isSaleActive()", "0x564566a8"], ["claimOpen()", "0x4b8bcb58"],
+  ["mintingEnabled()", "0x9fd6db12"], ["isPublicSaleLive()", "0x86233071"], ["publicMintOpen()", "0xbcc9ca5b"],
+  ["saleIsActive()", "0xeb8d2444"], ["isMinting()", "0x2a8092df"], ["isClaimOpen()", "0x24fd2652"]
+];
+var LIMIT_FUNCS = [ /* per-wallet mint limit, uint, no args (computed) */
+  ["maxPerWallet()", "0x453c2310"], ["maxMintPerWallet()", "0xb228d925"],
+  ["maxPerAddress()", "0x639814e0"], ["maxMintsPerWallet()", "0xf516a2e6"],
+  ["perWalletLimit()", "0xde42c69e"], ["walletLimit()", "0x3c8463a1"]
+];
+var MINTED_FUNCS = [ /* how many the probe wallet already minted, uint(address) (computed) */
+  ["addressMintedBalance(address)", "0x18cae269"], ["minted(address)", "0x1e7269c5"],
+  ["numMinted(address)", "0x20fc7eb2"], ["mintCount(address)", "0xed9ec888"],
+  ["mintedCount(address)", "0xfddcb5ea"], ["walletMinted(address)", "0xd3738fc8"]
+];
+var WL_FUNCS = [ /* whitelist / allowlist status of the probe wallet, bool(address) (computed) */
+  ["isWhitelisted(address)", "0x3af32abf"], ["whitelisted(address)", "0xd936547e"],
+  ["isAllowlisted(address)", "0x05a3b809"], ["allowlisted(address)", "0x03f45d41"],
+  ["isWhiteListed(address)", "0x6f9170f6"]
+];
+var MINT_CANDIDATES = [
+  ["mint()", "0x1249c58b", ""], ["mint(uint256)", "0xa0712d68", encUint(1n)],
+  ["freeMint()", "0x5b70ea9f", ""], ["freeMint(uint256)", "0x7c928fe9", encUint(1n)],
+  ["publicMint(uint256)", "0x2db11544", encUint(1n)], ["claim()", "0x4e71d92d", ""],
+  ["claim(uint256)", "0x379607f5", encUint(1n)], ["buy(uint256)", "0xd96a094a", encUint(1n)],
+  ["mintNFT(uint256)", "0x92642744", encUint(1n)], ["mintToken(uint256)", "0xc634d032", encUint(1n)],
+  ["mintPublic(uint256)", "0xefd0cbf9", encUint(1n)]
+];
+var SEL_SUPPORTS = "0x01ffc9a7", SEL_BALANCEOF = "0x70a08231";
+var SEL_SETAPPROVALFORALL = "a22cb465";
+
+function safeCall(c, to, data, from){
+  return ethCall(c, to, data, from).then(function(r){ return r; }).catch(function(){ return { __transport__: true }; });
+}
+function isTransport(v){ return v && typeof v === "object" && v.__transport__; }
+function isRevert(v){ return v && typeof v === "object" && v.__revert__; }
+
+/* ================= Precheck ================= */
+function extractAddress(text){
+  var m = /0x[a-fA-F0-9]{40}/.exec(text || "");
+  return m ? m[0] : null;
+}
+
+function runPrecheck(address, c){
+  var report = { contract: address, input: address, chainKey: c.key, chainName: c.name, chainId: c.id, native: c.native };
+  var gasPromise = rpc(c, "eth_gasPrice", []).catch(function(){ return null; });
+
+  return rpc(c, "eth_getCode", [address, "latest"]).then(function(code){
+    return Promise.all([
+      rpc(c, "eth_getStorageAt", [address, EIP1967_IMPL, "latest"]).catch(function(){ return null; }),
+      rpc(c, "eth_getStorageAt", [address, EIP1967_ADMIN, "latest"]).catch(function(){ return null; }),
+      rpc(c, "eth_blockNumber", []).catch(function(){ return null; })
+    ]).then(function(arr){
+      var implRaw = arr[0], blockHex = arr[2];
+      report.block = blockHex ? Number(BigInt(blockHex)) : null;
+      report.impl = decAddress(implRaw);
+      if (isZeroAddress(report.impl)) report.impl = null;
+      report.isProxy = !!report.impl;
+      var codeHex = (code || "0x").toLowerCase();
+      report.isContract = codeHex !== "0x" && codeHex.length > 2;
+      report.codeSize = report.isContract ? (codeHex.length - 2) / 2 : 0;
+      if (!report.isContract) {
+        report.verdict = "NOT_A_CONTRACT";
+        return gasPromise.then(function(g){ report.gasWei = g; return report; });
+      }
+      /* fingerprint source: implementation code for proxies, else own code */
+      var fpPromise = Promise.resolve(codeHex);
+      if (report.impl) {
+        fpPromise = rpc(c, "eth_getCode", [report.impl, "latest"]).then(function(ic){
+          return (ic && ic !== "0x") ? ic.toLowerCase() : codeHex;
+        }).catch(function(){ return codeHex; });
+      }
+      return fpPromise.then(function(fpHex){
+        report.fingerprint = fpHex;
+        return probeAll(report, c).then(function(){
+          return gasPromise.then(function(g){ report.gasWei = g; return report; });
+        });
+      });
+    });
+  });
+}
+
+function probeAll(report, c){
+  var address = report.contract;
+  var jobs = [];
+  var views = {}, prices = {}, opens = {}, limits = {}, minted = {}, wls = {};
+  VIEW.forEach(function(v){
+    jobs.push(safeCall(c, address, callData(v[1])).then(function(r){
+      if (isTransport(r) || isRevert(r) || r == null || r === "0x") return;
+      var val = v[2] === "uint" ? decUint(r) : v[2] === "bool" ? decBool(r) : v[2] === "address" ? decAddress(r) : decString(r);
+      if (val !== null && val !== undefined) views[v[0]] = val;
+    }));
+  });
+  PRICE_FUNCS.forEach(function(p){
+    jobs.push(safeCall(c, address, callData(p[1])).then(function(r){
+      if (isTransport(r) || isRevert(r) || r == null || r === "0x") return;
+      var val = decUint(r);
+      if (val !== null) prices[p[0]] = val;
+    }));
+  });
+  OPEN_FUNCS.forEach(function(o){
+    jobs.push(safeCall(c, address, callData(o[1])).then(function(r){
+      if (isTransport(r) || isRevert(r) || r == null || r === "0x") return;
+      var val = decBool(r);
+      if (val !== null) opens[o[0]] = val;
+    }));
+  });
+  LIMIT_FUNCS.forEach(function(l){
+    jobs.push(safeCall(c, address, callData(l[1])).then(function(r){
+      if (isTransport(r) || isRevert(r) || r == null || r === "0x") return;
+      var val = decUint(r);
+      if (val !== null && val > 0n && val < 1000000n) limits[l[0]] = val;
+    }));
+  });
+  MINTED_FUNCS.forEach(function(m){
+    jobs.push(safeCall(c, address, callData(m[1], encAddress(PROBE_WALLET))).then(function(r){
+      if (isTransport(r) || isRevert(r) || r == null || r === "0x") return;
+      var val = decUint(r);
+      if (val !== null && val < 1000000n) minted[m[0]] = val;
+    }));
+  });
+  WL_FUNCS.forEach(function(w){
+    jobs.push(safeCall(c, address, callData(w[1], encAddress(PROBE_WALLET))).then(function(r){
+      if (isTransport(r) || isRevert(r) || r == null || r === "0x") return;
+      var val = decBool(r);
+      if (val !== null) wls[w[0]] = val;
+    }));
+  });
+  jobs.push(safeCall(c, address, callData(SEL_BALANCEOF, encAddress(PROBE_WALLET))).then(function(r){
+    if (!isTransport(r) && !isRevert(r) && r && r !== "0x") report.walletBalance = decUint(r);
+  }));
+  jobs.push(safeCall(c, address, callData(SEL_SUPPORTS, encBytes4("0x80ac58cd"))).then(function(r){
+    if (!isTransport(r) && !isRevert(r)) report.isERC721 = decBool(r);
+  }));
+  jobs.push(safeCall(c, address, callData(SEL_SUPPORTS, encBytes4("0xd9b67a26"))).then(function(r){
+    if (!isTransport(r) && !isRevert(r)) report.isERC1155 = decBool(r);
+  }));
+
+  return Promise.all(jobs).then(function(){
+    report.name = views.name || null;
+    report.symbol = views.symbol || null;
+    report.owner = (views.owner && !isZeroAddress(views.owner)) ? views.owner : null;
+    report.paused = views.paused === true;
+    var maxSupply = null;
+    ["maxSupply", "MAX_SUPPLY", "maxTotalSupply", "collectionSize"].forEach(function(k){
+      if (maxSupply === null && views[k] !== undefined) maxSupply = views[k];
+    });
+    var total = views.totalSupply !== undefined ? views.totalSupply : (views.totalMinted !== undefined ? views.totalMinted : null);
+    report.totalSupply = total; report.maxSupply = maxSupply;
+    report.remaining = (maxSupply !== null && total !== null) ? (maxSupply - total) : null;
+
+    report.priceWei = null; report.priceVia = null;
+    for (var i = 0; i < PRICE_FUNCS.length; i++) {
+      if (prices[PRICE_FUNCS[i][0]] !== undefined) { report.priceWei = prices[PRICE_FUNCS[i][0]]; report.priceVia = PRICE_FUNCS[i][0]; break; }
+    }
+    var openVals = Object.keys(opens).map(function(k){ return opens[k]; });
+    report.open = openVals.length ? openVals.some(Boolean) : null;
+    report.openProbesAnswered = openVals.length;
+
+    report.limitPerWallet = null; report.limitVia = null;
+    for (var j = 0; j < LIMIT_FUNCS.length; j++) {
+      if (limits[LIMIT_FUNCS[j][0]] !== undefined) { report.limitPerWallet = limits[LIMIT_FUNCS[j][0]]; report.limitVia = LIMIT_FUNCS[j][0]; break; }
+    }
+    report.probeMinted = null;
+    for (var m2 = 0; m2 < MINTED_FUNCS.length; m2++) {
+      if (minted[MINTED_FUNCS[m2][0]] !== undefined) { report.probeMinted = minted[MINTED_FUNCS[m2][0]]; break; }
+    }
+    var wlVals = Object.keys(wls).map(function(k){ return wls[k]; });
+    report.probeWhitelisted = wlVals.length ? wlVals.some(Boolean) : null;
+
+    /* approval-style surface outside a standard NFT interface */
+    var fp0 = report.fingerprint || "";
+    report.approvalOddity = fp0.indexOf(SEL_SETAPPROVALFORALL) !== -1 && report.isERC721 !== true && report.isERC1155 !== true;
+
+    /* simulation: only functions present in bytecode */
+    var fp = report.fingerprint || "";
+    var cands = MINT_CANDIDATES.filter(function(cd){ return fp.indexOf(cd[1].slice(2)) !== -1; });
+    report.mintCandidates = cands.map(function(cd){ return cd[0]; });
+    var simJobs = cands.map(function(cd){
+      return safeCall(c, address, callData(cd[1], cd[2]), PROBE_WALLET).then(function(r){
+        if (isTransport(r)) return { fn: cd[0], result: "transport" };
+        if (isRevert(r)) return { fn: cd[0], result: "revert", reason: String(r.__revert__).slice(0, 120) };
+        return { fn: cd[0], result: "success" };
+      });
+    });
+    return Promise.all(simJobs).then(function(sims){
+      report.simulations = sims;
+      report.simSuccess = sims.some(function(s){ return s.result === "success"; });
+      report.verdict = decideVerdict(report);
+    });
+  });
+}
+
+function decideVerdict(r){
+  if (r.remaining !== null && r.remaining <= 0n) return "SOLD_OUT";
+  if (r.priceWei !== null && r.priceWei > 0n) return "PAID_NOT_FREE";
+  if (r.open === false) return "NOT_OPEN";
+  var priceFree = r.priceWei === 0n;
+  var priceFreeBySim = r.priceWei === null && r.simSuccess;
+  if ((priceFree || priceFreeBySim) && r.open === true && (r.remaining === null || r.remaining > 0n)) {
+    return r.priceWei === 0n && r.simSuccess && r.open !== true ? "OPEN_FREE_LIKELY_BY_SIMULATION" : "OPEN_FREE_LIKELY";
+  }
+  if (r.simSuccess && (priceFree || r.priceWei === null)) return "OPEN_FREE_LIKELY_BY_SIMULATION";
+  if (priceFree) return "FREE_PRICE_BUT_OPEN_UNCONFIRMED";
+  return "UNKNOWN_NEEDS_AI_REVIEW";
+}
+
+/* ================= Rendering ================= */
+var lastResult = null, lastUnresolved = null, checking = false;
+var resultEl = document.getElementById("result");
+var progressEl = document.getElementById("progress");
+var errorEl = document.getElementById("form-error");
+var checkBtn = document.getElementById("check-btn");
+var inputEl = document.getElementById("ca-input");
+
+function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){ return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+function reportChain(r){ return CHAINS[r.chainKey] || chain(); }
+
+function gasInfo(r){
+  var gasWeiHex = r.gasWei;
+  if (!gasWeiHex || typeof gasWeiHex !== "string") return null;
+  try {
+    var wei = BigInt(gasWeiHex);
+    var gwei = Number(wei) / 1e9;
+    var b = reportChain(r).gasBands;
+    var band = gwei < b.cheap ? "CHEAP" : gwei < b.normal ? "NORMAL" : gwei < b.expensive ? "EXPENSIVE" : "VERY_EXPENSIVE";
+    return { gwei: gwei, band: band };
+  } catch (e) { return null; }
+}
+function gasText(r){
+  var g = gasInfo(r);
+  if (!g) return t("gasUnknown");
+  var bandTxt = g.band === "CHEAP" ? t("bandCheap") : g.band === "NORMAL" ? t("bandNormal") : g.band === "EXPENSIVE" ? t("bandExp") : t("bandVeryExp");
+  var gs = g.gwei < 0.01 ? g.gwei.toFixed(4) : g.gwei < 1 ? g.gwei.toFixed(3) : g.gwei.toFixed(2);
+  return gs.replace(/0+$/, "").replace(/\.$/, ".0") + " gwei (" + bandTxt + ")";
+}
+
+function buildPlainText(r){
+  var v = VERDICTS[lang][r.verdict] || VERDICTS[lang].UNKNOWN_NEEDS_AI_REVIEW;
+  var c = reportChain(r);
+  var name = r.name || t("unknownProject");
+  var sym = r.symbol || "?";
+  var lines = [];
+  lines.push("🔍 " + t("precheckWord") + " — " + name + " ($" + sym + ") · " + c.name);
+  lines.push(t("contract") + ": " + r.contract);
+  lines.push(c.explorerName + ": " + c.explorerUrl + "/address/" + r.contract);
+  lines.push("");
+  lines.push(v[0]);
+  if (r.priceWei === 0n) lines.push("💰 " + (lang === "en" ? "Price: 0 - truly free, gas only" : "价格: 0 — 真免费, 只付 gas"));
+  else if (r.priceWei !== null && r.priceWei !== undefined) lines.push("💰 " + (lang === "en" ? "Price: " : "价格: ") + weiToNativeStr(r.priceWei) + " " + c.native + (lang === "en" ? " - NOT free" : " — 不是免费"));
+  else lines.push("💰 " + (lang === "en" ? "Price: not read (unconfirmed, not proof of 0)" : "价格: 未读到 (未确认, 不是 0 的证明)"));
+  if (r.maxSupply !== null && r.maxSupply !== undefined) {
+    lines.push("📦 " + (lang === "en" ? "Progress: " : "进度: ") + fmtNum(r.totalSupply) + "/" + fmtNum(r.maxSupply) + (lang === "en" ? " - " : " — 还剩 ") + fmtNum(r.remaining) + (lang === "en" ? " left" : ""));
+  } else if (r.totalSupply !== null && r.totalSupply !== undefined) {
+    lines.push("📦 " + (lang === "en" ? "Minted: " : "已铸: ") + fmtNum(r.totalSupply) + (lang === "en" ? " (no max supply read)" : " (总量上限未读到)"));
+  }
+  lines.push("🚪 " + (lang === "en" ? "Status: " : "开放状态: ") + (r.open ? t("statusOpen") : t("statusClosed")));
+  if (r.limitPerWallet !== null && r.limitPerWallet !== undefined) lines.push("🎟 " + (lang === "en" ? "Per-wallet limit: " : "每钱包上限: ") + fmtNum(r.limitPerWallet));
+  var wparts = [];
+  if (r.walletBalance !== null && r.walletBalance !== undefined) wparts.push(t("holds") + " " + fmtNum(r.walletBalance));
+  if (r.probeMinted !== null && r.probeMinted !== undefined) wparts.push(t("mintedCount") + " " + fmtNum(r.probeMinted));
+  if (r.probeWhitelisted === true) wparts.push(t("wlYes"));
+  if (r.probeWhitelisted === false) wparts.push(t("wlNo"));
+  if (wparts.length) lines.push("👛 " + (lang === "en" ? "Sample wallet: " : "示例钱包: ") + wparts.join(" · "));
+  lines.push("🧪 " + (lang === "en" ? "Simulated mint (0 " : "模拟 mint (0 ") + c.native + "): " + simText(r));
+  var flags = riskFlags(r);
+  lines.push("");
+  if (flags.length) {
+    lines.push(t("riskTitle") + ":");
+    flags.forEach(function(f){ lines.push(f); });
+  } else {
+    lines.push("🛡 " + (lang === "en" ? "Backdoor check: " : "后门检查: ") + t("riskNone"));
+  }
+  lines.push("⛽ " + (lang === "en" ? "Gas now: " : "当前 Gas: ") + gasText(r));
+  if (r.block) lines.push((lang === "en" ? "Block: " : "数据区块: ") + r.block + " · " + c.name + " (" + c.id + ")");
+  lines.push("");
+  lines.push(t("verdictLabel") + ": " + v[1]);
+  lines.push(t("resultNote"));
+  return lines.join("\n");
+}
+function simText(r){
+  if (!r.simulations || !r.simulations.length) return t("simNone");
+  var ok = r.simulations.filter(function(s){ return s.result === "success"; })[0];
+  if (ok) return t("simOk") + " (" + ok.fn + ")";
+  var fail = r.simulations[0];
+  return t("simFail") + " (" + fail.fn + (fail.reason ? ", " + fail.reason : "") + ")";
+}
+function riskFlags(r){
+  var flags = [];
+  if (r.isProxy) flags.push(t("flagProxy") + (r.impl ? " — impl " + r.impl.slice(0, 10) + "…" : ""));
+  if (r.owner) flags.push(t("flagOwner") + " (" + r.owner.slice(0, 10) + "…)");
+  if (r.paused) flags.push(t("flagPaused"));
+  if (r.approvalOddity) flags.push(t("flagApprovals"));
+  return flags;
+}
+
+function renderResult(r){
+  lastResult = r; lastUnresolved = null;
+  var v = VERDICTS[lang][r.verdict] || VERDICTS[lang].UNKNOWN_NEEDS_AI_REVIEW;
+  var c = reportChain(r);
+  var name = r.name || t("unknownProject"), sym = r.symbol || "?";
+  var html = "";
+  html += '<div class="result-head"><div class="proj">🔍 ' + esc(t("precheckWord")) + " — " + esc(name) + " ($" + esc(sym) + ") · " + esc(c.name) + "</div>";
+  html += '<div class="contract-row"><code>' + esc(r.contract) + '</code><button type="button" class="mini-btn" data-copy="' + esc(r.contract) + '">' + esc(t("copy")) + '</button><a class="mini-btn" href="' + esc(c.explorerUrl) + "/address/" + esc(r.contract) + '" target="_blank" rel="noopener">' + esc(c.explorerName) + " ↗</a></div></div>";
+  html += '<div class="verdict ' + v[2] + '">' + esc(v[0]) + "<small>" + esc(v[1]) + "</small></div>";
+  html += '<div class="facts">';
+  /* price */
+  var priceHtml;
+  if (r.priceWei === 0n) priceHtml = '<span class="ok">' + esc(t("priceFree")) + "</span>";
+  else if (r.priceWei !== null && r.priceWei !== undefined) priceHtml = "<b>" + esc(weiToNativeStr(r.priceWei)) + " " + esc(c.native) + "</b>" + esc(t("pricePaid")) + (r.priceVia ? ' <span style="color:var(--faint)">via ' + esc(r.priceVia) + "</span>" : "");
+  else priceHtml = '<span class="unk">' + esc(t("priceUnknown")) + "</span>";
+  html += '<div class="fact"><div class="k">' + esc(t("lblPrice")) + '</div><div class="v">' + priceHtml + "</div></div>";
+  /* progress */
+  if (r.maxSupply !== null && r.maxSupply !== undefined) {
+    var pct = (r.maxSupply > 0n) ? Math.min(100, Number((r.totalSupply * 10000n) / r.maxSupply) / 100) : 0;
+    html += '<div class="fact"><div class="k">' + esc(t("lblProgress")) + '</div><div class="v"><b>' + esc(fmtNum(r.totalSupply)) + " / " + esc(fmtNum(r.maxSupply)) + "</b> (" + pct.toFixed(1) + '%) · ' + esc(t("left")) + " <b>" + esc(fmtNum(r.remaining)) + "</b></div></div>";
+  } else if (r.totalSupply !== null && r.totalSupply !== undefined) {
+    html += '<div class="fact"><div class="k">' + esc(t("lblProgress")) + '</div><div class="v">' + esc(t("mintedOnly")) + " <b>" + esc(fmtNum(r.totalSupply)) + "</b> " + esc(t("noMax")) + "</div></div>";
+  }
+  /* status */
+  html += '<div class="fact"><div class="k">' + esc(t("lblStatus")) + '</div><div class="v">' + (r.open ? '<span class="ok">' + esc(t("statusOpen")) + "</span>" : '<span class="unk">' + esc(t("statusClosed")) + "</span>") + "</div></div>";
+  /* per-wallet limit */
+  if (r.limitPerWallet !== null && r.limitPerWallet !== undefined) {
+    html += '<div class="fact"><div class="k">' + esc(t("lblLimit")) + '</div><div class="v"><b>' + esc(fmtNum(r.limitPerWallet)) + "</b>" + (r.limitVia ? ' <span style="color:var(--faint)">via ' + esc(r.limitVia) + "</span>" : "") + "</div></div>";
+  }
+  /* sample wallet: balance / minted / whitelist */
+  var wparts = [];
+  if (r.walletBalance !== null && r.walletBalance !== undefined) wparts.push(esc(t("holds")) + " <b>" + esc(fmtNum(r.walletBalance)) + "</b>");
+  if (r.probeMinted !== null && r.probeMinted !== undefined) wparts.push(esc(t("mintedCount")) + " <b>" + esc(fmtNum(r.probeMinted)) + "</b>" + (r.limitPerWallet ? " / " + esc(fmtNum(r.limitPerWallet)) : ""));
+  if (r.probeWhitelisted === true) wparts.push('<span class="ok">' + esc(t("wlYes")) + "</span>");
+  if (r.probeWhitelisted === false) wparts.push('<span class="no">' + esc(t("wlNo")) + "</span>");
+  if (wparts.length) html += '<div class="fact"><div class="k">' + esc(t("lblWallet")) + '</div><div class="v">' + wparts.join(" · ") + "</div></div>";
+  /* sim */
+  var simHtml;
+  if (!r.simulations || !r.simulations.length) simHtml = '<span class="unk">' + esc(t("simNone")) + "</span>";
+  else if (r.simSuccess) {
+    var okFn = r.simulations.filter(function(s){ return s.result === "success"; })[0].fn;
+    simHtml = '<span class="ok">' + esc(t("simOk")) + "</span> (" + esc(okFn) + ")";
+  } else {
+    var f0 = r.simulations[0];
+    simHtml = '<span class="no">' + esc(t("simFail")) + "</span> (" + esc(f0.fn) + (f0.reason ? " — " + esc(f0.reason) : "") + ")";
+  }
+  html += '<div class="fact"><div class="k">' + esc(t("lblSim")) + " (0 " + esc(c.native) + ')</div><div class="v">' + simHtml + "</div></div>";
+  /* gas */
+  html += '<div class="fact"><div class="k">' + esc(t("lblGas")) + '</div><div class="v">' + esc(gasText(r)) + "</div></div>";
+  html += "</div>";
+  /* risk */
+  var flags = riskFlags(r);
+  html += '<div class="riskbox"><h3>' + esc(t("riskTitle")) + "</h3>";
+  if (flags.length) { html += "<ul>" + flags.map(function(f){ return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>"; }
+  else html += "<p>🛡 " + esc(t("riskNone")) + "</p>";
+  html += "</div>";
+  if (r.block) html += '<p class="block-line">' + esc(t("blockLine")) + ": " + r.block + " · " + esc(c.name) + " (" + c.id + ")</p>";
+  html += '<p class="result-note">' + esc(t("resultNote")) + "</p>";
+  html += '<div class="result-actions"><button type="button" class="action main" id="btn-copy-result">' + esc(t("copyResult")) + '</button><button type="button" class="action" id="btn-copy-link">' + esc(t("copyLink")) + "</button></div>";
+  html += '<p class="result-note" style="margin-top:0;padding:0 16px 14px">' + esc(t("linkHint")) + "</p>";
+  resultEl.innerHTML = html;
+  resultEl.classList.add("show");
+  bindResultButtons(r);
+}
+
+function renderUnresolved(addr){
+  lastUnresolved = addr; lastResult = null;
+  resultEl.innerHTML =
+    '<div class="result-head"><div class="proj">' + esc(t("unresolvedTitle")) + '</div>' +
+    '<div class="contract-row"><code>' + esc(addr) + '</code><button type="button" class="mini-btn" data-copy="' + esc(addr) + '">' + esc(t("copy")) + "</button></div></div>" +
+    '<div style="padding:14px 16px 16px"><p style="margin:0;font-size:14.5px;color:var(--muted)">' + esc(t("unresolvedBody")) + "</p></div>";
+  resultEl.classList.add("show");
+  bindCopyButtons();
+}
+
+function copyText(text, btn){
+  function done(){
+    if (!btn) return;
+    var old = btn.textContent;
+    btn.textContent = t("copied"); btn.classList.add("copied");
+    setTimeout(function(){ btn.textContent = old; btn.classList.remove("copied"); }, 2000);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(function(){ fallbackCopy(text); done(); });
+  } else { fallbackCopy(text); done(); }
+}
+function fallbackCopy(text){
+  var ta = document.createElement("textarea");
+  ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand("copy"); } catch (e) {}
+  document.body.removeChild(ta);
+}
+function bindCopyButtons(){
+  resultEl.querySelectorAll("[data-copy]").forEach(function(b){
+    b.addEventListener("click", function(){ copyText(b.getAttribute("data-copy"), b); });
+  });
+}
+function bindResultButtons(r){
+  bindCopyButtons();
+  var b1 = document.getElementById("btn-copy-result");
+  var b2 = document.getElementById("btn-copy-link");
+  if (b1) b1.addEventListener("click", function(){ copyText(buildPlainText(r), b1); });
+  if (b2) b2.addEventListener("click", function(){
+    var base = window.location.origin + window.location.pathname;
+    copyText(base + "?ca=" + r.contract + "&chain=" + r.chainKey, b2);
+  });
+}
+
+/* ================= Flow ================= */
+function showError(msg){
+  if (!msg) { errorEl.classList.remove("show"); errorEl.textContent = ""; return; }
+  errorEl.textContent = msg; errorEl.classList.add("show");
+}
+function setChecking(on){
+  checking = on;
+  progressEl.classList.toggle("show", on);
+  checkBtn.disabled = on;
+  checkBtn.textContent = on ? t("checkingBtn") : t("checkBtn");
+}
+function doCheck(raw){
+  if (checking) { showError(t("errBusy")); return; }
+  var addr = extractAddress(raw);
+  if (!addr) { showError(t("errNoAddr")); return; }
+  addr = "0x" + addr.slice(2).toLowerCase();
+  showError(null);
+  resultEl.classList.remove("show"); resultEl.innerHTML = "";
+  lastResult = null; lastUnresolved = null;
+  setChecking(true);
+  var c = chain();
+  runPrecheck(addr, c).then(function(report){
+    setChecking(false);
+    renderResult(report);
+    resultEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }).catch(function(err){
+    setChecking(false);
+    renderUnresolved(addr);
+    resultEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  });
+}
+document.getElementById("check-form").addEventListener("submit", function(e){
+  e.preventDefault();
+  doCheck(inputEl.value);
+});
+document.getElementById("ex-fox-base").addEventListener("click", function(){
+  setChain("base");
+  inputEl.value = "0x686e1b413c3EBAA8AB93f080d3E1A356d2129a10";
+  doCheck(inputEl.value);
+});
+document.getElementById("ex-pixelfox").addEventListener("click", function(){
+  setChain("bsc");
+  inputEl.value = "0x9134ae94ab0739cf0e0f4f5e9cacfa5e1d029b0c";
+  doCheck(inputEl.value);
+});
+
+/* ================= Tip (standalone copy) ================= */
+document.getElementById("tip-copy").addEventListener("click", function(){
+  copyText("0xfFDd2f83555c64d1CaA17f5646C08b80013ED38b", this);
+});
+
+/* ================= Farcaster user line (filled by the SDK module below) ================= */
+function showFcUser(user){
+  if (!user) return;
+  var el = document.getElementById("fc-user");
+  var label = user.username ? "@" + user.username : "FID " + user.fid;
+  el.querySelector("span").textContent = "👾 " + t("fcViewing") + " " + label + " · FID " + user.fid;
+  el.style.display = "flex";
+}
+
+/* ================= Init: chain + language + ?ca= prefill ================= */
+applyChain();
+applyLang();
+(function(){
+  var params = new URLSearchParams(window.location.search);
+  var pre = params.get("ca") || params.get("q") || "";
+  if (pre) {
+    inputEl.value = pre;
+    if (extractAddress(pre)) doCheck(pre);
+  }
+})();
+</script>
+
+<!-- ================= Farcaster Mini App SDK =================
+     Loaded as an ES module from esm.sh per the official getting-started guide.
+     Everything here is defensive: if the SDK fails to load, or the page is
+     opened in a normal browser with no Farcaster context, the app simply
+     runs standalone and nothing breaks. -->
+<script type="module">
+import { sdk } from "https://esm.sh/@farcaster/miniapp-sdk";
+window.__fcSdk = sdk;
+(async function(){
+  try {
+    var inApp = false;
+    try { inApp = await sdk.isInMiniApp(); } catch (e) {}
+    var user = null;
+    try {
+      var ctx = await sdk.context;
+      if (ctx && ctx.user) user = ctx.user;
+    } catch (e) {}
+    if (user) {
+      window.__fcUser = user;
+      if (typeof showFcUser === "function") showFcUser(user);
+    }
+    if (user || inApp) {
+      var btn = document.getElementById("tip-sdk-btn");
+      if (btn) btn.style.display = "block";
+    }
+  } catch (e) { /* standalone: ignore */ }
+  try { await sdk.actions.ready(); } catch (e) { /* not in a Farcaster host: ignore */ }
+})();
+/* Tip inside Farcaster: open the client's native send flow with 1 USDC on
+   Base prefilled to the builder address. The user confirms in the client;
+   this page never touches a key and cannot send anything by itself. */
+var tipBtn = document.getElementById("tip-sdk-btn");
+if (tipBtn) tipBtn.addEventListener("click", async function(){
+  try {
+    await sdk.actions.sendToken({
+      token: "eip155:8453/erc20:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      amount: "1000000",
+      recipientAddress: "0xfFDd2f83555c64d1CaA17f5646C08b80013ED38b"
+    });
+  } catch (e) { /* declined or unsupported host: the copy-address row still works */ }
+});
+</script>
+</body>
+</html>
